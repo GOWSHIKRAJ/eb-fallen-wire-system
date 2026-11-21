@@ -1,0 +1,21 @@
+create extension if not exists pgcrypto;
+create table if not exists profiles (id uuid primary key references auth.users on delete cascade, full_name text, role text not null default 'viewer', created_at timestamptz not null default now());
+create table if not exists zones (id uuid primary key default gen_random_uuid(), code text unique not null, name text not null, created_at timestamptz not null default now());
+create table if not exists transformers (id uuid primary key default gen_random_uuid(), code text unique not null, zone_id uuid not null references zones(id) on delete cascade, created_at timestamptz not null default now());
+create table if not exists devices (id uuid primary key default gen_random_uuid(), zone_id uuid references zones(id) on delete set null, name text not null, online boolean not null default false, last_seen timestamptz);
+create table if not exists readings (id bigint generated always as identity primary key, zone_code text not null references zones(code), voltage numeric not null, current_a numeric not null, status text, recorded_at timestamptz not null default now());
+create table if not exists fault_events (id uuid primary key default gen_random_uuid(), zone_code text not null references zones(code), type text not null, severity text not null check (severity in ('warning','critical')), acknowledged boolean not null default false, created_at timestamptz not null default now());
+create table if not exists alerts (id uuid primary key default gen_random_uuid(), fault_event_id uuid references fault_events(id) on delete cascade, message text not null, created_at timestamptz not null default now());
+create index if not exists readings_zone_time on readings (zone_code, recorded_at desc);
+create index if not exists faults_time on fault_events (created_at desc);
+alter table profiles enable row level security; alter table zones enable row level security; alter table transformers enable row level security;
+alter table devices enable row level security; alter table readings enable row level security; alter table fault_events enable row level security; alter table alerts enable row level security;
+-- Signed-in users may read. Writes happen only via the server (service role bypasses RLS).
+create policy "read zones" on zones for select to authenticated using (true);
+create policy "read transformers" on transformers for select to authenticated using (true);
+create policy "read devices" on devices for select to authenticated using (true);
+create policy "read readings" on readings for select to authenticated using (true);
+create policy "read faults" on fault_events for select to authenticated using (true);
+create policy "read alerts" on alerts for select to authenticated using (true);
+create policy "own profile" on profiles for select to authenticated using (id = auth.uid());
+insert into zones (code, name) values ('zone3','Zone 3 Feeder') on conflict do nothing;
